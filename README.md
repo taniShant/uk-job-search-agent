@@ -2,7 +2,7 @@
 
 Daily automated job search for UK tech roles paying £120k-150k.
 
-## Setup
+## Setup 
 
 1. Get Tavily API key from https://tavily.com
 2. Add secrets in GitHub: Settings → Secrets and variables → Actions
