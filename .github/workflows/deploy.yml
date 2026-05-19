@@ -102,9 +102,9 @@ name: Daily UK Job Search
 on:
   push:                      
     branches: [ main ] 
-  schedule:
-    - cron: '*/10 * * * *'
-    # - cron: '35 9 * * *'
+  # schedule: its trigger by Cron job: https://console.cron-job.org/jobs/7631568
+  #   - cron: '*/10 * * * *'
+  #   # - cron: '35 9 * * *'
   workflow_dispatch:
 
 jobs:

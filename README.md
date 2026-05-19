@@ -17,4 +17,4 @@ Runs daily at 9 AM UK time, searches LinkedIn & job boards, emails results.
 
 ## License
 
-MIT
+MIT 
