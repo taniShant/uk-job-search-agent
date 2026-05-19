@@ -464,7 +464,6 @@ def filter_jobs_by_criteria(jobs: List[Dict]) -> List[Dict]:
 
         role_match = any(r.lower() in title for r in TARGET_ROLES)
         uk_match = any(x in location for x in ["uk", "london", "britain", "united kingdom"])
-        
 
         if role_match and uk_match:
             filtered.append(j)
@@ -484,7 +483,7 @@ job_agent = Agent(
         send_job_digest
     ],
     system_prompt=f"""
-    You are a UK job hunting assistant. Your job is to help find tech jobs paying £{SALARY_MIN:,} - £{SALARY_MAX:,} GBP in the United Kingdom.
+    You are a UK job hunting assistant. Your job is to help find tech jobs paying £{SALARY_MIN:,} - £{SALARY_MAX:,} GBP in the United Kingdom and posted in last 1 week.
 
     TARGET ROLES: {', '.join(TARGET_ROLES)}
 
