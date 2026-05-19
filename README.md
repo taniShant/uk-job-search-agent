@@ -13,8 +13,12 @@ Daily automated job search for UK tech roles paying £120k-150k.
 
 ## How it works
 
-Runs daily at 9 AM UK time, searches LinkedIn & job boards, emails results.
+Runs daily at 10:05 AM UK time, searches LinkedIn & job boards, emails (in gmail) results.
+This Cron job is scheduled in cron-job via acron job  https://console.cron-job.org/jobs/7631568
+
+
 
 ## License
 
 MIT 
+
