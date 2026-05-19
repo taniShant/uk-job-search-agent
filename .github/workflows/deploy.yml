@@ -97,13 +97,38 @@
 #           aws lambda get-function \
 #             --function-name uk-itwork-search-agent        
 
+# name: Daily UK Job Search
+
+# on:
+#   push:                      
+#     branches: [ main ] 
+#   # schedule: its trigger by Cron job: https://console.cron-job.org/jobs/7631568
+#   #   # - cron: '35 9 * * *'
+#   workflow_dispatch:
+
+# jobs:
+#   job-search:
+#     runs-on: ubuntu-latest
+#     steps:
+#       - uses: actions/checkout@v4
+#       - uses: actions/setup-python@v5
+#         with:
+#           python-version: '3.11'
+#       - run: pip install -r requirements.txt
+#       - run: python src/job_agent.py
+#         env:
+#           TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+#           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+#           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+#           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+#           AWS_DEFAULT_REGION: eu-west-1
+
 name: Daily UK Job Search
 
 on:
   push:                      
     branches: [ main ] 
-  # schedule: its trigger by Cron job: https://console.cron-job.org/jobs/7631568
-  #   # - cron: '35 9 * * *'
+  # schedule: triggered by cron-job.org (https://console.cron-job.org/jobs/7631568)
   workflow_dispatch:
 
 jobs:
@@ -111,10 +136,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      
+      # ✅ DOWNLOAD job history from PREVIOUS day's run
+      - name: Download yesterday's job history
+        uses: actions/download-artifact@v4
+        with:
+          name: jobs-history
+          path: .
+        continue-on-error: true  # First run won't fail
+      
       - run: pip install -r requirements.txt
+      
       - run: python src/job_agent.py
         env:
           TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
@@ -122,3 +158,12 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: eu-west-1
+      
+      # ✅ UPLOAD updated job history for TOMORROW's run
+      - name: Upload job history for next run
+        uses: actions/upload-artifact@v4
+        with:
+          name: jobs-history
+          path: jobs_history.csv
+          retention-days: 30  # Keep history for 30 days
+          overwrite: true  # Replace yesterday's artifact

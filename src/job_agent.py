@@ -41,7 +41,7 @@ SALARY_MAX = 150000
 LOCATION = "United Kingdom"
 
 # CSV file for persistence
-JOBS_FILE = "jobs_history.csv"
+JOBS_FILE = os.path.join(os.getcwd(), "jobs_history.csv")
 
 # ============================================================
 # CSV DEDUPLICATION SYSTEM
@@ -220,58 +220,6 @@ def search_general_jobs(role: str) -> List[Dict]:
 # ============================================================
 # TOOL 4: SEND EMAIL + CSV DEDUPE
 # ============================================================
-
-# @tool
-# def send_job_digest(jobs: List[Dict], recipient: str) -> str:
-
-#     if not jobs:
-#         return "No jobs found"
-
-#     # LOAD EXISTING FROM CSV
-#     existing = load_existing_jobs()
-
-#     # FILTER ONLY NEW JOBS
-#     new_jobs = filter_new_jobs(jobs, existing)
-
-#     if not new_jobs:
-#         return f"No new jobs (all {len(jobs)} already seen)"
-
-#     # SAVE NEW JOBS TO CSV
-#     append_jobs_to_csv(new_jobs)
-
-#     # BUILD EMAIL
-#     html = f"""
-#     <h2>UK Tech Jobs Digest</h2>
-#     <p>New Jobs Found: {len(new_jobs)}</p>
-#     """
-
-#     for j in new_jobs:
-#         html += f"""
-#         <hr>
-#         <b>{j['title']}</b><br>
-#         {j['company']}<br>
-#         {j['location']}<br>
-#         <a href="{j['apply_url']}">Apply</a><br>
-#         """
-
-#     msg = MIMEMultipart()
-#     msg["From"] = YOUR_EMAIL
-#     msg["To"] = recipient
-#     msg["Subject"] = f"UK Jobs: {len(new_jobs)} new roles"
-
-#     msg.attach(MIMEText(html, "html"))
-
-#     try:
-#         server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
-#         server.starttls()
-#         server.login(YOUR_EMAIL, YOUR_EMAIL_PASSWORD)
-#         server.send_message(msg)
-#         server.quit()
-
-#         return f"Sent {len(new_jobs)} jobs"
-
-#     except Exception as e:
-#         return f"Email error: {e}"
 
 @tool
 def send_job_digest(jobs: List[Dict], recipient: str) -> str:
