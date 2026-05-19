@@ -35,7 +35,7 @@ jobs:
       # -----------------------------
       - name: Upload Lambda zip to S3
         run: |
-          aws s3 cp job-agent.zip s3://uk-job-agent-deploy-bucket/job-agent.zip
+          aws s3 cp job-agent.zip s3://svc-s3-dev-632943041262-modelartifact/uk-work-search-agent/lambda/job-agent.zip
 
       # -----------------------------
       # 4. DEPLOY CLOUDFORMATION

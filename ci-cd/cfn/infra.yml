@@ -11,6 +11,10 @@ Parameters:
 
   LambdaS3Key:
     Type: String
+  LambdaRoleArn:
+    Type: String
+    Default: "arn:aws:iam::632943041262:role/Qnabotpoc-FulfillmentLambdaRole-1P3JPNZFD8T2Y"
+
 Resources:
 
   # ---------------------------
@@ -34,36 +38,7 @@ Resources:
   # ---------------------------
   # IAM ROLE FOR LAMBDA
   # ---------------------------
-  LambdaRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: uk-job-search-lambda-role
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: lambda.amazonaws.com
-            Action: sts:AssumeRole
-
-      Policies:
-        - PolicyName: lambda-policy
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action:
-                  - logs:CreateLogGroup
-                  - logs:CreateLogStream
-                  - logs:PutLogEvents
-                Resource: "*"
-
-              - Effect: Allow
-                Action:
-                  - dynamodb:GetItem
-                  - dynamodb:PutItem
-                  - dynamodb:Query
-                Resource: "*"
+  # Refer existing lamda role
 
   # ---------------------------
   # LAMBDA FUNCTION
@@ -72,9 +47,9 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: uk-itwork-search-agent
-      Runtime: python3.11
+      Runtime: python3.12
       Handler: jobsearcher_uk.lambda_handler
-      Role: !GetAtt LambdaRole.Arn
+      Role: !Ref LambdaRoleArn
       Timeout: 300
       MemorySize: 512
       Code:
@@ -93,7 +68,8 @@ Resources:
     Type: AWS::Events::Rule
     Properties:
       Name: uk-job-search-schedule
-      ScheduleExpression: cron(0 9 * * ? *)  # 9 UTC = 10 UK BST
+      # ScheduleExpression: cron(0 9 * * ? *)  # 9 UTC = 10 UK BST
+      ScheduleExpression: rate(10 minutes)
       State: ENABLED
       Targets:
         - Arn: !GetAtt JobSearchLambda.Arn
