@@ -83,10 +83,10 @@ jobs:
             --stack-name awsconfigcommons-uk-itjob-agent-stack \
             --capabilities CAPABILITY_NAMED_IAM \
             --parameter-overrides \
-              TavilyKey=${{ secrets.TAVILY_API_KEY }} \
-              EmailPassword=${{ secrets.EMAIL_PASSWORD }} \
-              LambdaS3Bucket=svc-s3-dev-632943041262-modelartifact \
-              LambdaS3Key=uk-work-search-agent/lambda/job-agent.zip
+              "TavilyKey=${{ secrets.TAVILY_API_KEY }}" \
+              "EmailPassword=${{ secrets.EMAIL_PASSWORD }}" \
+              "LambdaS3Bucket=svc-s3-dev-632943041262-modelartifact" \
+              "LambdaS3Key=uk-work-search-agent/lambda/job-agent.zip"
 
       # -----------------------------------
       # SHOW LAMBDA INFO
