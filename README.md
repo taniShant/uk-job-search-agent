@@ -15,12 +15,15 @@ Daily automated job search for UK tech roles paying £120k-150k.
 
 Runs daily at 10:05 AM UK time, searches LinkedIn & job boards, emails (in gmail) results.
 This Cron job is scheduled in cron-job via acron job  https://console.cron-job.org/jobs/7631568
+URL points to github , action.yml : https://api.github.com/repos/taniShant/uk-job-search-agent/actions/workflows/deploy.yml/dispatches
 
 Go to Advanced tab of cron and set values 
 
 Key : Accept         Value: application/vnd.github.v3+json
 Key : Authorization  Value: Bearer <gitlab pat>
-Key : Accept.   Value: application/vnd.github.v3+json
+Key : Content-Type   Value: application/json
+
+Method: POST . Request body {"ref":"main"}
 
 ## License
 
