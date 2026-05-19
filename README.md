@@ -8,7 +8,8 @@ Daily automated job search for UK tech roles paying £120k-150k.
 2. Add secrets in GitHub: Settings → Secrets and variables → Actions
    - `TAVILY_API_KEY`  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"
    - `EMAIL_PASSWORD`
-3. Push to main branch
+   - Aws secret keys 
+3. Push to main branch 
 
 ## How it works
 

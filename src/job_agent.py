@@ -4,7 +4,7 @@ UK Job Search Agent - Finds £120k-150k tech jobs in UK and emails daily digest
 Built with Strands Agents SDK
 """
 
-import os
+import os, sys
 import json
 import smtplib
 from email.mime.text import MIMEText
@@ -322,7 +322,7 @@ def filter_jobs_by_criteria(jobs: List[Dict]) -> List[Dict]:
         role_match = any(role.lower() in title for role in TARGET_ROLES)
         
         # Check UK location
-        uk_match = 'uk' in location or 'london' in location or 'britain' in location or 'united kingdom' in location
+        uk_match = 'uk' in location or 'Uk' in location or 'UK' in location or 'london' in location or 'London' in location or 'britain' in location or 'united kingdom' in location or 'United Kingdom' in location
         
         if role_match and uk_match:
             filtered.append(job)
@@ -394,17 +394,32 @@ if __name__ == "__main__":
     print("=" * 60)
     
     # Check configuration
-    if TAVILY_API_KEY == "ytvly-dev-29O2Uf-eseaqsg1WMAIvdvJGnm21eDnGC775Ld3ybTAHT3lbn":
-        print("⚠️  WARNING: Please set your TAVILY_API_KEY in a .env file")
-        print("   Create a file called .env with:")
-        print("   TAVILY_API_KEY=tvly-your-actual-key")
-        print("   EMAIL_PASSWORD=your-app-password")
-        sys.exit(1)
+    # if TAVILY_API_KEY == "ytvly-dev-29O2Uf-eseaqsg1WMAIvdvJGnm21eDnGC775Ld3ybTAHT3lbn":
+    #     print("⚠️  WARNING: Please set your TAVILY_API_KEY in a .env file")
+    #     print("   Create a file called .env with:")
+    #     print("   TAVILY_API_KEY=tvly-your-actual-key")
+    #     print("   EMAIL_PASSWORD=your-app-password")
+    #     sys.exit(1)
     
+    # if not YOUR_EMAIL_PASSWORD:
+    #     print("⚠️  WARNING: Email password not set. Email sending will fail.")
+    #     print("   For Gmail, create an App Password at: https://myaccount.google.com/apppasswords")
+    #     print("   Then add to .env: EMAIL_PASSWORD=your-16-digit-app-password")
+
+
+    missing = []
+    if not TAVILY_API_KEY:
+        missing.append("TAVILY_API_KEY")
     if not YOUR_EMAIL_PASSWORD:
-        print("⚠️  WARNING: Email password not set. Email sending will fail.")
-        print("   For Gmail, create an App Password at: https://myaccount.google.com/apppasswords")
-        print("   Then add to .env: EMAIL_PASSWORD=your-16-digit-app-password")
+        missing.append("EMAIL_PASSWORD")
+    
+    if missing:
+        print(f"⚠️  WARNING: Missing: {', '.join(missing)}")
+        print("   For GitHub Actions: Add as repository secrets")
+        print("   For local testing: Create a .env file")
+        sys.exit(1)
+
+
     
     # Run the search
     run_job_search()
