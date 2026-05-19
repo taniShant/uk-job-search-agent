@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 """
 UK Job Search Agent - Finds £120k-150k tech jobs in UK and emails daily digest
-Built with Strands Agents SDK
+Now with CSV-based persistence + deduplication
 """
 
 import os, sys
 import json
 import smtplib
+import csv
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from datetime import datetime, timedelta
-from typing import List, Dict, Any
+from datetime import datetime
+from typing import List, Dict
 from dotenv import load_dotenv
 
 from strands import Agent, tool
@@ -20,16 +21,15 @@ from tavily import TavilyClient
 load_dotenv()
 
 # ============================================================
-# CONFIGURATION - EDIT THESE VALUES
+# CONFIGURATION
 # ============================================================
 
-TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "your_tavily_api_key_here")
+TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
 YOUR_EMAIL = "shantanu.bsa@gmail.com"
-YOUR_EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD", "")  # For Gmail, use App Password
-SMTP_SERVER = "smtp.gmail.com"  # Use "smtp.mail.yahoo.com" for Yahoo, etc.
+YOUR_EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD", "")
+SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 
-# Job search criteria
 TARGET_ROLES = [
     "AI Engineer", "Data Engineer", "Data Scientist", "AI Strategist",
     "Cloud Architect", "Lead Architect", "Solutions Architect",
@@ -40,300 +40,441 @@ SALARY_MIN = 120000
 SALARY_MAX = 150000
 LOCATION = "United Kingdom"
 
-# File to track already sent jobs (for deduplication)
-SENT_JOBS_FILE = "sent_jobs.json"
+# CSV file for persistence
+JOBS_FILE = "jobs_history.csv"
 
 # ============================================================
-# DEDUPLICATION - Never resend the same job
+# CSV DEDUPLICATION SYSTEM
 # ============================================================
 
-def load_sent_jobs() -> Dict[str, str]:
-    """Load previously sent jobs from file"""
-    if os.path.exists(SENT_JOBS_FILE):
-        with open(SENT_JOBS_FILE, 'r') as f:
-            return json.load(f)
-    return {}
+def load_existing_jobs() -> Dict[str, Dict]:
+    """Load existing jobs from CSV (keyed by apply_url)"""
+    existing = {}
 
-def save_sent_jobs(sent_jobs: Dict[str, str]):
-    """Save sent jobs to file"""
-    with open(SENT_JOBS_FILE, 'w') as f:
-        json.dump(sent_jobs, f, indent=2)
+    if not os.path.exists(JOBS_FILE):
+        return existing
 
-def is_job_already_sent(job_url: str, sent_jobs: Dict[str, str]) -> bool:
-    """Check if job was already emailed"""
-    return job_url in sent_jobs
+    with open(JOBS_FILE, mode="r", newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            existing[row["apply_url"]] = row
 
-def mark_job_as_sent(job_url: str, job_title: str, sent_jobs: Dict[str, str]):
-    """Mark job as sent"""
-    sent_jobs[job_url] = {
-        "title": job_title,
-        "sent_date": datetime.now().isoformat()
-    }
-    save_sent_jobs(sent_jobs)
+    return existing
+
+
+def filter_new_jobs(jobs: List[Dict], existing: Dict[str, Dict]) -> List[Dict]:
+    """Return only new jobs not already in CSV"""
+    new_jobs = []
+
+    for job in jobs:
+        url = job.get("apply_url")
+        if url and url not in existing:
+            new_jobs.append(job)
+
+    return new_jobs
+
+
+def append_jobs_to_csv(jobs: List[Dict]):
+    """Append new jobs to CSV history file"""
+    if not jobs:
+        return
+
+    file_exists = os.path.exists(JOBS_FILE)
+
+    with open(JOBS_FILE, mode="a", newline="", encoding="utf-8") as f:
+        fieldnames = [
+            "title",
+            "company",
+            "location",
+            "salary_range",
+            "apply_url",
+            "source",
+            "posted_date",
+            "first_seen_date"
+        ]
+
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+
+        if not file_exists:
+            writer.writeheader()
+
+        for job in jobs:
+            writer.writerow({
+                "title": job.get("title", ""),
+                "company": job.get("company", ""),
+                "location": job.get("location", ""),
+                "salary_range": job.get("salary_range", ""),
+                "apply_url": job.get("apply_url", ""),
+                "source": job.get("source", ""),
+                "posted_date": job.get("posted_date", ""),
+                "first_seen_date": datetime.now().isoformat()
+            })
 
 # ============================================================
-# TOOL 1: Search LinkedIn for Jobs
+# TOOL 1: LinkedIn Jobs
 # ============================================================
 
 @tool
 def search_linkedin_jobs(role: str) -> List[Dict]:
-    """
-    Search LinkedIn for UK tech jobs matching the role.
-    Returns list of job postings with titles, companies, locations, and links.
-    """
     client = TavilyClient(api_key=TAVILY_API_KEY)
-    
-    # Construct search query
-    query = f'site:linkedin.com/jobs "{role}" "{LOCATION}" salary {SALARY_MIN} {SALARY_MAX} GBP'
-    
+    query = f'site:linkedin.com/jobs "{role}" "{LOCATION}" {SALARY_MIN} {SALARY_MAX}'
+
     try:
-        results = client.search(query, max_results=15)
-        
+        results = client.search(query, max_results=10)
+
         jobs = []
-        for result in results.get('results', []):
-            job = {
-                'title': result.get('title', role),
-                'company': extract_company_from_url(result.get('url', '')),
-                'location': LOCATION,
-                'salary_range': f"£{SALARY_MIN:,} - £{SALARY_MAX:,}",
-                'apply_url': result.get('url', ''),
-                'source': 'LinkedIn',
-                'posted_date': datetime.now().strftime('%Y-%m-%d')
-            }
-            jobs.append(job)
-        
+        for r in results.get("results", []):
+            jobs.append({
+                "title": r.get("title", role),
+                "company": extract_company_from_url(r.get("url", "")),
+                "location": LOCATION,
+                "salary_range": f"£{SALARY_MIN:,} - £{SALARY_MAX:,}",
+                "apply_url": r.get("url", ""),
+                "source": "LinkedIn",
+                "posted_date": datetime.now().strftime("%Y-%m-%d")
+            })
+
         return jobs
+
     except Exception as e:
-        print(f"Error searching LinkedIn: {e}")
+        print("LinkedIn error:", e)
         return []
 
+
 def extract_company_from_url(url: str) -> str:
-    """Extract company name from LinkedIn job URL"""
-    # Simple extraction - can be improved
-    parts = url.split('/')
-    for i, part in enumerate(parts):
-        if part == 'company' and i + 1 < len(parts):
-            return parts[i + 1].replace('-', ' ').title()
-    return "Unknown Company"
+    parts = url.split("/")
+    if "company" in parts:
+        i = parts.index("company")
+        if i + 1 < len(parts):
+            return parts[i + 1].replace("-", " ").title()
+    return "Unknown"
 
 # ============================================================
-# TOOL 2: Search CWJobs
+# TOOL 2: CWJobs
 # ============================================================
 
 @tool
 def search_cwjobs(role: str) -> List[Dict]:
-    """
-    Search CWJobs for UK IT jobs matching the role.
-    """
     client = TavilyClient(api_key=TAVILY_API_KEY)
-    
-    query = f'site:cwjobs.co.uk "{role}" £{SALARY_MIN//1000}k £{SALARY_MAX//1000}k'
-    
+    query = f'site:cwjobs.co.uk "{role}" {SALARY_MIN//1000}k {SALARY_MAX//1000}k'
+
     try:
         results = client.search(query, max_results=10)
-        
+
         jobs = []
-        for result in results.get('results', []):
-            job = {
-                'title': result.get('title', role),
-                'company': extract_domain_name(result.get('url', '')),
-                'location': LOCATION,
-                'salary_range': f"£{SALARY_MIN:,} - £{SALARY_MAX:,}",
-                'apply_url': result.get('url', ''),
-                'source': 'CWJobs',
-                'posted_date': datetime.now().strftime('%Y-%m-%d')
-            }
-            jobs.append(job)
-        
+        for r in results.get("results", []):
+            jobs.append({
+                "title": r.get("title", role),
+                "company": extract_domain(r.get("url", "")),
+                "location": LOCATION,
+                "salary_range": f"£{SALARY_MIN:,} - £{SALARY_MAX:,}",
+                "apply_url": r.get("url", ""),
+                "source": "CWJobs",
+                "posted_date": datetime.now().strftime("%Y-%m-%d")
+            })
+
         return jobs
+
     except Exception as e:
-        print(f"Error searching CWJobs: {e}")
+        print("CWJobs error:", e)
         return []
 
-def extract_domain_name(url: str) -> str:
-    """Extract domain name from URL"""
+
+def extract_domain(url: str) -> str:
     import re
-    match = re.search(r'https?://(?:www\.)?([^/]+)', url)
-    if match:
-        return match.group(1).split('.')[0].title()
-    return "Unknown Company"
+    m = re.search(r"https?://(?:www\.)?([^/]+)", url)
+    return m.group(1).split(".")[0].title() if m else "Unknown"
 
 # ============================================================
-# TOOL 3: Search General Job Boards
+# TOOL 3: General Jobs
 # ============================================================
 
 @tool
 def search_general_jobs(role: str) -> List[Dict]:
-    """
-    Search general job boards (Indeed, Monster, etc.) for UK tech jobs.
-    """
     client = TavilyClient(api_key=TAVILY_API_KEY)
-    
-    query = f'"{role}" jobs "{LOCATION}" salary {SALARY_MIN} to {SALARY_MAX}'
-    
+    query = f'"{role}" jobs {LOCATION} {SALARY_MIN} to {SALARY_MAX}'
+
     try:
         results = client.search(query, max_results=15)
-        
+
         jobs = []
-        for result in results.get('results', []):
-            # Filter out non-UK or irrelevant results
-            title = result.get('title', '').lower()
+        for r in results.get("results", []):
+            title = r.get("title", "").lower()
             if any(role.lower() in title for role in TARGET_ROLES):
-                job = {
-                    'title': result.get('title', role),
-                    'company': extract_domain_name(result.get('url', '')),
-                    'location': LOCATION,
-                    'salary_range': f"£{SALARY_MIN:,} - £{SALARY_MAX:,}",
-                    'apply_url': result.get('url', ''),
-                    'source': 'General Job Board',
-                    'posted_date': datetime.now().strftime('%Y-%m-%d')
-                }
-                jobs.append(job)
-        
+                jobs.append({
+                    "title": r.get("title", role),
+                    "company": extract_domain(r.get("url", "")),
+                    "location": LOCATION,
+                    "salary_range": f"£{SALARY_MIN:,} - £{SALARY_MAX:,}",
+                    "apply_url": r.get("url", ""),
+                    "source": "General",
+                    "posted_date": datetime.now().strftime("%Y-%m-%d")
+                })
+
         return jobs
+
     except Exception as e:
-        print(f"Error searching general jobs: {e}")
+        print("General search error:", e)
         return []
 
 # ============================================================
-# TOOL 4: Send Email Digest
+# TOOL 4: SEND EMAIL + CSV DEDUPE
 # ============================================================
+
+# @tool
+# def send_job_digest(jobs: List[Dict], recipient: str) -> str:
+
+#     if not jobs:
+#         return "No jobs found"
+
+#     # LOAD EXISTING FROM CSV
+#     existing = load_existing_jobs()
+
+#     # FILTER ONLY NEW JOBS
+#     new_jobs = filter_new_jobs(jobs, existing)
+
+#     if not new_jobs:
+#         return f"No new jobs (all {len(jobs)} already seen)"
+
+#     # SAVE NEW JOBS TO CSV
+#     append_jobs_to_csv(new_jobs)
+
+#     # BUILD EMAIL
+#     html = f"""
+#     <h2>UK Tech Jobs Digest</h2>
+#     <p>New Jobs Found: {len(new_jobs)}</p>
+#     """
+
+#     for j in new_jobs:
+#         html += f"""
+#         <hr>
+#         <b>{j['title']}</b><br>
+#         {j['company']}<br>
+#         {j['location']}<br>
+#         <a href="{j['apply_url']}">Apply</a><br>
+#         """
+
+#     msg = MIMEMultipart()
+#     msg["From"] = YOUR_EMAIL
+#     msg["To"] = recipient
+#     msg["Subject"] = f"UK Jobs: {len(new_jobs)} new roles"
+
+#     msg.attach(MIMEText(html, "html"))
+
+#     try:
+#         server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+#         server.starttls()
+#         server.login(YOUR_EMAIL, YOUR_EMAIL_PASSWORD)
+#         server.send_message(msg)
+#         server.quit()
+
+#         return f"Sent {len(new_jobs)} jobs"
+
+#     except Exception as e:
+#         return f"Email error: {e}"
 
 @tool
 def send_job_digest(jobs: List[Dict], recipient: str) -> str:
     """
-    Send HTML email digest with all new job matches.
+    Beautiful HTML email + CSV-based deduplication (single source of truth)
     """
+
     if not jobs:
-        return "No new jobs found today"
-    
-    # Filter out already sent jobs
-    sent_jobs = load_sent_jobs()
-    new_jobs = [job for job in jobs if not is_job_already_sent(job['apply_url'], sent_jobs)]
-    
+        return "No jobs found"
+
+    # ============================================================
+    # 1. LOAD EXISTING JOBS FROM CSV
+    # ============================================================
+    existing = load_existing_jobs()
+
+    # ============================================================
+    # 2. FILTER ONLY NEW JOBS
+    # ============================================================
+    new_jobs = filter_new_jobs(jobs, existing)
+
     if not new_jobs:
-        return f"No new jobs today (found {len(jobs)} jobs but all were already sent previously)"
-    
-    # Create HTML email
+        return f"No new jobs today (all {len(jobs)} already in history)"
+
+    # ============================================================
+    # 3. SAVE NEW JOBS TO CSV (IMPORTANT: BEFORE EMAIL)
+    # ============================================================
+    append_jobs_to_csv(new_jobs)
+
+    # ============================================================
+    # 4. BEAUTIFUL EMAIL TEMPLATE (YOUR ORIGINAL STYLE)
+    # ============================================================
     html_content = f"""
     <!DOCTYPE html>
     <html>
     <head>
         <style>
-            body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-            .container {{ max-width: 800px; margin: 0 auto; padding: 20px; }}
-            h1 {{ color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; }}
-            h2 {{ color: #34495e; margin-top: 20px; }}
-            .job {{ background: #f8f9fa; border-left: 4px solid #3498db; padding: 15px; margin: 15px 0; border-radius: 4px; }}
-            .job-title {{ font-size: 18px; font-weight: bold; color: #2c3e50; }}
-            .company {{ color: #7f8c8d; margin: 5px 0; }}
-            .salary {{ color: #27ae60; font-weight: bold; margin: 5px 0; }}
-            .location {{ color: #7f8c8d; margin: 5px 0; }}
-            .apply-link {{ margin: 10px 0; }}
-            .apply-link a {{ background: #3498db; color: white; padding: 8px 15px; text-decoration: none; border-radius: 4px; }}
-            .apply-link a:hover {{ background: #2980b9; }}
-            .footer {{ margin-top: 30px; padding-top: 15px; border-top: 1px solid #ddd; font-size: 12px; color: #95a5a6; }}
+            body {{
+                font-family: Arial, sans-serif;
+                line-height: 1.6;
+                color: #333;
+                background-color: #f4f6f9;
+            }}
+            .container {{
+                max-width: 850px;
+                margin: 0 auto;
+                padding: 20px;
+            }}
+            h1 {{
+                color: #2c3e50;
+                border-bottom: 2px solid #3498db;
+                padding-bottom: 10px;
+            }}
+            h2 {{
+                color: #34495e;
+            }}
+            .summary {{
+                background: #ffffff;
+                padding: 15px;
+                border-radius: 8px;
+                margin-bottom: 20px;
+                box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+            }}
+            .job {{
+                background: #ffffff;
+                border-left: 5px solid #3498db;
+                padding: 15px;
+                margin: 15px 0;
+                border-radius: 6px;
+                box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+            }}
+            .job-title {{
+                font-size: 18px;
+                font-weight: bold;
+                color: #2c3e50;
+            }}
+            .company {{
+                color: #7f8c8d;
+                margin-top: 5px;
+            }}
+            .salary {{
+                color: #27ae60;
+                font-weight: bold;
+            }}
+            .location {{
+                color: #7f8c8d;
+            }}
+            .apply-link a {{
+                display: inline-block;
+                margin-top: 10px;
+                background: #3498db;
+                color: white;
+                padding: 8px 14px;
+                text-decoration: none;
+                border-radius: 5px;
+            }}
+            .apply-link a:hover {{
+                background: #2980b9;
+            }}
+            .footer {{
+                margin-top: 30px;
+                font-size: 12px;
+                color: #95a5a6;
+                text-align: center;
+            }}
         </style>
     </head>
     <body>
         <div class="container">
+
             <h1>🎯 UK Tech Jobs Digest</h1>
-            <p>Found <strong>{len(new_jobs)}</strong> new jobs matching your criteria:</p>
-            <ul>
-                <li>💰 Salary: £{SALARY_MIN:,} - £{SALARY_MAX:,}</li>
-                <li>📍 Location: {LOCATION}</li>
-                <li>💼 Roles: {', '.join(TARGET_ROLES[:5])}...</li>
-            </ul>
+
+            <div class="summary">
+                <h2>Today's Summary</h2>
+                <p><b>{len(new_jobs)}</b> new high-paying roles found</p>
+                <p>💰 Salary: £{SALARY_MIN:,} - £{SALARY_MAX:,}</p>
+                <p>📍 Location: {LOCATION}</p>
+                <p>💼 Roles: {', '.join(TARGET_ROLES[:5])} ...</p>
+            </div>
     """
-    
+
+    # ============================================================
+    # 5. JOB CARDS (BEAUTIFUL LOOP)
+    # ============================================================
     for job in new_jobs:
         html_content += f"""
             <div class="job">
-                <div class="job-title">{job.get('title', 'Position Available')}</div>
+                <div class="job-title">{job.get('title', 'Role Available')}</div>
                 <div class="company">🏢 {job.get('company', 'Unknown Company')}</div>
-                <div class="salary">💰 {job.get('salary_range', 'Salary not specified')}</div>
                 <div class="location">📍 {job.get('location', LOCATION)}</div>
+                <div class="salary">💰 {job.get('salary_range', 'Not disclosed')}</div>
+
                 <div class="apply-link">
-                    <a href="{job.get('apply_url', '#')}">📋 View & Apply</a>
+                    <a href="{job.get('apply_url', '#')}">🔗 View & Apply</a>
                 </div>
-                <small>Source: {job.get('source', 'Job Board')} | Found: {job.get('posted_date', 'Today')}</small>
+
+                <small style="color:#95a5a6;">
+                    Source: {job.get('source', 'Job Board')} |
+                    Found: {job.get('posted_date', 'Today')}
+                </small>
             </div>
         """
-        
-        # Mark as sent
-        mark_job_as_sent(job['apply_url'], job.get('title', 'Unknown'), load_sent_jobs())
-    
+
+    # ============================================================
+    # 6. FOOTER
+    # ============================================================
     html_content += f"""
             <div class="footer">
-                <p>This is an automated daily job alert from your UK Job Search Agent.</p>
-                <p>To stop receiving these emails, remove the scheduled task or update your settings.</p>
+                <p>Automated UK Job Search Agent</p>
                 <p>Generated on {datetime.now().strftime('%B %d, %Y at %I:%M %p')}</p>
+                <p>No duplicate jobs will be sent again (CSV dedup enabled)</p>
             </div>
+
         </div>
     </body>
     </html>
     """
-    
-    # Send email
+
+    # ============================================================
+    # 7. SEND EMAIL
+    # ============================================================
     try:
         msg = MIMEMultipart()
-        msg['From'] = YOUR_EMAIL
-        msg['To'] = recipient
-        msg['Subject'] = f"🎯 Daily Job Alert: {len(new_jobs)} new UK Tech Jobs (£{SALARY_MIN//1000}k-£{SALARY_MAX//1000}k)"
-        
-        msg.attach(MIMEText(html_content, 'html'))
-        
-        # For Gmail, use App Password
-        if SMTP_SERVER == "smtp.gmail.com":
-            server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
-            server.starttls()
-            server.login(YOUR_EMAIL, YOUR_EMAIL_PASSWORD)
-            server.send_message(msg)
-            server.quit()
-        else:
-            # For other SMTP servers
-            server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
-            server.starttls()
-            server.login(YOUR_EMAIL, YOUR_EMAIL_PASSWORD)
-            server.send_message(msg)
-            server.quit()
-        
-        return f"✅ Successfully sent {len(new_jobs)} job alerts to {recipient}"
-    
-    except Exception as e:
-        return f"❌ Failed to send email: {str(e)}"
+        msg["From"] = YOUR_EMAIL
+        msg["To"] = recipient
+        msg["Subject"] = f"🎯 {len(new_jobs)} New UK Tech Jobs (£{SALARY_MIN//1000}k-£{SALARY_MAX//1000}k)"
 
+        msg.attach(MIMEText(html_content, "html"))
+
+        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+        server.starttls()
+        server.login(YOUR_EMAIL, YOUR_EMAIL_PASSWORD)
+        server.send_message(msg)
+        server.quit()
+
+        return f"✅ Sent {len(new_jobs)} new jobs successfully"
+
+    except Exception as e:
+        return f"❌ Email failed: {str(e)}"
 # ============================================================
-# TOOL 5: Filter Jobs by Role and Location
+# FILTER TOOL
 # ============================================================
 
 @tool
 def filter_jobs_by_criteria(jobs: List[Dict]) -> List[Dict]:
-    """
-    Filter jobs to only include those matching target roles and UK location.
-    """
     filtered = []
-    
-    for job in jobs:
-        title = job.get('title', '').lower()
-        location = job.get('location', '').lower()
+
+    for j in jobs:
+        title = j.get("title", "").lower()
+        location = j.get("location", "").lower()
+
+        role_match = any(r.lower() in title for r in TARGET_ROLES)
+        uk_match = any(x in location for x in ["uk", "london", "britain", "united kingdom"])
         
-        # Check role match
-        role_match = any(role.lower() in title for role in TARGET_ROLES)
-        
-        # Check UK location
-        uk_match = 'uk' in location or 'Uk' in location or 'UK' in location or 'london' in location or 'London' in location or 'britain' in location or 'united kingdom' in location or 'United Kingdom' in location
-        
+
         if role_match and uk_match:
-            filtered.append(job)
-    
+            filtered.append(j)
+
     return filtered
 
 # ============================================================
-# CREATE THE AGENT
+# AGENT
 # ============================================================
 
-# Initialize the Strands Agent with all tools [citation:7]
 job_agent = Agent(
     tools=[
         search_linkedin_jobs,
@@ -351,14 +492,18 @@ job_agent = Agent(
     1. Always search for each target role using search_linkedin_jobs, search_cwjobs, and search_general_jobs
     2. After collecting jobs, use filter_jobs_by_criteria to ensure they match the requirements
     3. Finally, use send_job_digest to email the results to {YOUR_EMAIL}
-    4. Never resend jobs that were already sent (the send_job_digest tool handles deduplication automatically)
 
-    If no jobs are found, send an email saying "No new jobs found today" to keep me informed.
-    """
+IMPORTANT:
+- Never resend jobs already in CSV history
+- CSV file is jobs_history.csv
+
+If no jobs are found, send an email saying "No new jobs found today" to keep me informed.
+
+"""
 )
 
 # ============================================================
-# MAIN EXECUTION FUNCTION
+# MAIN
 # ============================================================
 
 def run_job_search():
@@ -368,44 +513,27 @@ def run_job_search():
     print(f"💰 Salary range: £{SALARY_MIN:,} - £{SALARY_MAX:,}")
     print(f"📍 Location: {LOCATION}")
     print("-" * 50)
-    
-    # Build the search prompt
+
+     # Build the search prompt
     search_prompt = f"""
     Search for all {len(TARGET_ROLES)} job roles in {LOCATION} paying £{SALARY_MIN:,} to £{SALARY_MAX:,}.
     After collecting all jobs, filter them, then send the digest to {YOUR_EMAIL}.
     """
-    
-    # Run the agent
+
     try:
         result = job_agent(search_prompt)
         print(f"\n✅ Agent completed: {result}")
         return result
     except Exception as e:
         print(f"\n❌ Agent error: {e}")
-        return None
+ 
 
-# ============================================================
-# RUN IF SCRIPT IS EXECUTED DIRECTLY
-# ============================================================
 
 if __name__ == "__main__":
+
     print("=" * 60)
     print("🤖 UK Job Search Agent")
     print("=" * 60)
-    
-    # Check configuration
-    # if TAVILY_API_KEY == "ytvly-dev-29O2Uf-eseaqsg1WMAIvdvJGnm21eDnGC775Ld3ybTAHT3lbn":
-    #     print("⚠️  WARNING: Please set your TAVILY_API_KEY in a .env file")
-    #     print("   Create a file called .env with:")
-    #     print("   TAVILY_API_KEY=tvly-your-actual-key")
-    #     print("   EMAIL_PASSWORD=your-app-password")
-    #     sys.exit(1)
-    
-    # if not YOUR_EMAIL_PASSWORD:
-    #     print("⚠️  WARNING: Email password not set. Email sending will fail.")
-    #     print("   For Gmail, create an App Password at: https://myaccount.google.com/apppasswords")
-    #     print("   Then add to .env: EMAIL_PASSWORD=your-16-digit-app-password")
-
 
     missing = []
     if not TAVILY_API_KEY:
@@ -418,8 +546,6 @@ if __name__ == "__main__":
         print("   For GitHub Actions: Add as repository secrets")
         print("   For local testing: Create a .env file")
         sys.exit(1)
-
-
     
     # Run the search
     run_job_search()
