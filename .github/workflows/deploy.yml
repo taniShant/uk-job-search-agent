@@ -44,10 +44,10 @@ jobs:
         run: |
           aws cloudformation deploy \
             --template-file ci-cd/cfn/infra.yml \
-            --stack-name uk-job-agent-stack \
+            --stack-name awsconfigcommons-uk-itjob-agent-stack \
             --capabilities CAPABILITY_NAMED_IAM \
             --parameter-overrides \
               TavilyKey=${{ secrets.TAVILY_API_KEY }} \
               EmailPassword=${{ secrets.AWS_SECRET_ACCESS_KEY }} \
-              LambdaS3Bucket=uk-job-agent-deploy-bucket \
-              LambdaS3Key=job-agent.zip
+              LambdaS3Bucket=svc-s3-dev-632943041262-modelartifact \
+              LambdaS3Key=uk-work-search-agent/lambda/job-agent.zip
