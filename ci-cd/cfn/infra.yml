@@ -1,0 +1,115 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: UK Job Search Agent - Lambda + EventBridge + DynamoDB
+
+Parameters:
+  TavilyKey:
+    Type: String
+  EmailPassword:
+    Type: String
+  LambdaS3Bucket:
+    Type: String
+
+  LambdaS3Key:
+    Type: String
+Resources:
+
+  # ---------------------------
+  # DYNAMODB (DEDUP STORE)
+  # ---------------------------
+  JobDedupTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: uk-job-dedup
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: job_url
+          AttributeType: S
+      KeySchema:
+        - AttributeName: job_url
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  # ---------------------------
+  # IAM ROLE FOR LAMBDA
+  # ---------------------------
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: uk-job-search-lambda-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+
+      Policies:
+        - PolicyName: lambda-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:Query
+                Resource: "*"
+
+  # ---------------------------
+  # LAMBDA FUNCTION
+  # ---------------------------
+  JobSearchLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: uk-itwork-search-agent
+      Runtime: python3.11
+      Handler: jobsearcher_uk.lambda_handler
+      Role: !GetAtt LambdaRole.Arn
+      Timeout: 300
+      MemorySize: 512
+      Code:
+        S3Bucket: !Ref LambdaS3Bucket
+        S3Key: !Ref LambdaS3Key
+      Environment:
+        Variables:
+          DDB_TABLE: uk-job-dedup
+          TAVILY_API_KEY: !Ref TavilyKey
+          EMAIL_PASSWORD: !Ref EmailPassword
+
+  # ---------------------------
+  # EVENTBRIDGE (10 AM UK TIME)
+  # ---------------------------
+  JobScheduleRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: uk-job-search-schedule
+      ScheduleExpression: cron(0 9 * * ? *)  # 9 UTC = 10 UK BST
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt JobSearchLambda.Arn
+          Id: LambdaTarget
+
+  # ---------------------------
+  # LAMBDA PERMISSION
+  # ---------------------------
+  LambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref JobSearchLambda
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt JobScheduleRule.Arn
+
+Outputs:
+  LambdaName:
+    Value: !Ref JobSearchLambda
