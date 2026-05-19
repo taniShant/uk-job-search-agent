@@ -1,3 +1,4 @@
+#Aws LAmbda BAsed 
 # name: Deploy UK Job Agent
 
 # on:
@@ -102,8 +103,8 @@ on:
   push:                      
     branches: [ main ] 
   schedule:
-    # - cron: '*/10 * * * *'
-    - cron: '35 9 * * *'
+    - cron: '*/10 * * * *'
+    # - cron: '35 9 * * *'
   workflow_dispatch:
 
 jobs:
