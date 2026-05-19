@@ -1,97 +1,123 @@
-name: Deploy UK Job Agent
+# name: Deploy UK Job Agent
+
+# on:
+#   push:
+#     branches: [ main ]
+#   workflow_dispatch:
+
+# jobs:
+#   deploy:
+#     runs-on: ubuntu-latest
+
+#     steps:
+#       - uses: actions/checkout@v4
+
+#       # -----------------------------------
+#       # SETUP PYTHON
+#       # -----------------------------------
+#       - name: Setup Python
+#         uses: actions/setup-python@v5
+#         with:
+#           python-version: '3.12'
+
+#       # # -----------------------------
+#       # # 1. ZIP LAMBDA CODE
+#       # # -----------------------------
+#       # - name: Zip Lambda
+#       #   run: |
+#       #     cd src/lambda_functions
+#       #     zip -r ../../job-agent.zip .
+
+#       # -----------------------------
+#       # 2. CONFIGURE AWS
+#       # -----------------------------
+#       - name: Configure AWS
+#         uses: aws-actions/configure-aws-credentials@v4
+#         with:
+#           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+#           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+#           aws-region: eu-west-1
+
+#       # -----------------------------------
+#       # BUILD LAMBDA PACKAGE
+#       # -----------------------------------
+#       - name: Build Lambda Package
+#         run: |
+
+#           rm -rf package
+#           rm -f job-agent.zip
+
+#           mkdir package
+
+#           # Install dependencies into package folder
+#           pip install -r requirements.txt -t package/
+
+#           # Copy lambda code
+#           cp src/lambda_functions/jobsearcher_uk.py package/
+
+#           # Create deployment zip
+#           cd package
+#           zip -r ../job-agent.zip .
+
+#       # -----------------------------------
+#       # VERIFY ZIP CONTENTS
+#       # -----------------------------------
+#       - name: Verify Package
+#         run: |
+#           unzip -l job-agent.zip
+
+#       # -----------------------------
+#       # 3. UPLOAD ZIP TO S3
+#       # -----------------------------
+#       - name: Upload Lambda zip to S3
+#         run: |
+#           aws s3 cp job-agent.zip s3://svc-s3-dev-632943041262-modelartifact/uk-work-search-agent/lambda/job-agent.zip
+
+#       # -----------------------------
+#       # 4. DEPLOY CLOUDFORMATION
+#       # -----------------------------
+#       - name: Deploy CloudFormation
+#         run: |
+#           aws cloudformation deploy \
+#             --template-file ci-cd/cfn/infra.yml \
+#             --stack-name awsconfigcommons-uk-itjob-agent-stack \
+#             --capabilities CAPABILITY_NAMED_IAM \
+#             --parameter-overrides \
+#               "TavilyKey=${{ secrets.TAVILY_API_KEY }}" \
+#               "EmailPassword=${{ secrets.EMAIL_PASSWORD }}" \
+#               "LambdaS3Bucket=svc-s3-dev-632943041262-modelartifact" \
+#               "LambdaS3Key=uk-work-search-agent/lambda/job-agent.zip"
+
+#       # -----------------------------------
+#       # SHOW LAMBDA INFO
+#       # -----------------------------------
+#       - name: Show Lambda
+#         run: |
+#           aws lambda get-function \
+#             --function-name uk-itwork-search-agent        
+
+name: Daily UK Job Search
 
 on:
-  push:
-    branches: [ main ]
+  push:                      
+    branches: [ main ] 
+  schedule:
+    - cron: '15 9 * * *'
   workflow_dispatch:
 
 jobs:
-  deploy:
+  job-search:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
-
-      # -----------------------------------
-      # SETUP PYTHON
-      # -----------------------------------
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
-
-      # # -----------------------------
-      # # 1. ZIP LAMBDA CODE
-      # # -----------------------------
-      # - name: Zip Lambda
-      #   run: |
-      #     cd src/lambda_functions
-      #     zip -r ../../job-agent.zip .
-
-      # -----------------------------
-      # 2. CONFIGURE AWS
-      # -----------------------------
-      - name: Configure AWS
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: eu-west-1
-
-      # -----------------------------------
-      # BUILD LAMBDA PACKAGE
-      # -----------------------------------
-      - name: Build Lambda Package
-        run: |
-
-          rm -rf package
-          rm -f job-agent.zip
-
-          mkdir package
-
-          # Install dependencies into package folder
-          pip install -r requirements.txt -t package/
-
-          # Copy lambda code
-          cp src/lambda_functions/jobsearcher_uk.py package/
-
-          # Create deployment zip
-          cd package
-          zip -r ../job-agent.zip .
-
-      # -----------------------------------
-      # VERIFY ZIP CONTENTS
-      # -----------------------------------
-      - name: Verify Package
-        run: |
-          unzip -l job-agent.zip
-
-      # -----------------------------
-      # 3. UPLOAD ZIP TO S3
-      # -----------------------------
-      - name: Upload Lambda zip to S3
-        run: |
-          aws s3 cp job-agent.zip s3://svc-s3-dev-632943041262-modelartifact/uk-work-search-agent/lambda/job-agent.zip
-
-      # -----------------------------
-      # 4. DEPLOY CLOUDFORMATION
-      # -----------------------------
-      - name: Deploy CloudFormation
-        run: |
-          aws cloudformation deploy \
-            --template-file ci-cd/cfn/infra.yml \
-            --stack-name awsconfigcommons-uk-itjob-agent-stack \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --parameter-overrides \
-              "TavilyKey=${{ secrets.TAVILY_API_KEY }}" \
-              "EmailPassword=${{ secrets.EMAIL_PASSWORD }}" \
-              "LambdaS3Bucket=svc-s3-dev-632943041262-modelartifact" \
-              "LambdaS3Key=uk-work-search-agent/lambda/job-agent.zip"
-
-      # -----------------------------------
-      # SHOW LAMBDA INFO
-      # ----------------------------------- 
-      - name: Show Lambda
-        run: |
-          aws lambda get-function \
-            --function-name uk-itwork-search-agent        
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - run: python src/job_agent.py
+        env:
+          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: eu-west-1
