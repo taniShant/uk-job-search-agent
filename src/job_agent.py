@@ -6,6 +6,7 @@ Now with CSV-based persistence + deduplication
 
 import os, sys
 import json
+import time
 import smtplib
 import csv
 from email.mime.text import MIMEText
@@ -134,6 +135,7 @@ def search_linkedin_jobs(role: str) -> List[Dict]:
                 "posted_date": datetime.now().strftime("%Y-%m-%d")
             })
 
+        time.sleep(1)
         return jobs
 
     except Exception as e:
@@ -172,7 +174,7 @@ def search_cwjobs(role: str) -> List[Dict]:
                 "source": "CWJobs",
                 "posted_date": datetime.now().strftime("%Y-%m-%d")
             })
-
+        time.sleep(1)
         return jobs
 
     except Exception as e:
@@ -210,7 +212,7 @@ def search_general_jobs(role: str) -> List[Dict]:
                     "source": "General",
                     "posted_date": datetime.now().strftime("%Y-%m-%d")
                 })
-
+        time.sleep(1)
         return jobs
 
     except Exception as e:
@@ -228,8 +230,9 @@ def send_job_digest(jobs: List[Dict], recipient: str) -> str:
     """
 
     if not jobs:
-        return "No jobs found"
+        return send_no_jobs_email(recipient) 
 
+    
     # ============================================================
     # 1. LOAD EXISTING JOBS FROM CSV
     # ============================================================
@@ -398,6 +401,51 @@ def send_job_digest(jobs: List[Dict], recipient: str) -> str:
 
     except Exception as e:
         return f"❌ Email failed: {str(e)}"
+    
+def send_no_jobs_email(recipient: str) -> str:
+    """Send email when no new jobs are found"""
+    html_content = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <style>
+            body { font-family: Arial, sans-serif; }
+            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+            h2 { color: #2c3e50; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h2>🤷 UK Tech Jobs Digest</h2>
+            <p>No new high-paying tech jobs found today.</p>
+            <p>💰 Salary: £120,000 - £150,000<br>
+            📍 Location: United Kingdom</p>
+            <p>Will keep searching tomorrow!</p>
+            <hr>
+            <small>Automated UK Job Search Agent</small>
+        </div>
+    </body>
+    </html>
+    """
+    
+    try:
+        msg = MIMEMultipart()
+        msg["From"] = YOUR_EMAIL
+        msg["To"] = recipient
+        msg["Subject"] = "🤷 UK Tech Jobs - No new jobs today"
+
+        msg.attach(MIMEText(html_content, "html"))
+
+        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+        server.starttls()
+        server.login(YOUR_EMAIL, YOUR_EMAIL_PASSWORD)
+        server.send_message(msg)
+        server.quit()
+
+        return "✅ No jobs found - notification email sent"
+
+    except Exception as e:
+        return f"❌ Failed to send no-jobs email: {str(e)}"    
 # ============================================================
 # FILTER TOOL
 # ============================================================

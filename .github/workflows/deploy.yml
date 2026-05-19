@@ -141,15 +141,25 @@ jobs:
         with:
           python-version: '3.11'
       
-      # ✅ DOWNLOAD job history from PREVIOUS day's run
-      - name: Download yesterday's job history
+      # ✅ DOWNLOAD job history from PREVIOUS run
+      - name: Download job history from previous run
         uses: actions/download-artifact@v4
         with:
           name: jobs-history
-          path: .
-        continue-on-error: true  # First run won't fail
+          path: .  # Downloads to current directory
+        continue-on-error: true  # Won't fail on first run
       
+      # ✅ Verify if CSV was downloaded (optional debug)
+      - name: Check if CSV exists
+        run: |
+          if [ -f jobs_history.csv ]; then
+            echo "✅ CSV found with $(wc -l jobs_history.csv) lines"
+          else
+            echo "⚠️ No existing CSV - first run or download failed"
+          fi
+
       - run: pip install -r requirements.txt
+ 
       
       - run: python src/job_agent.py
         env:
