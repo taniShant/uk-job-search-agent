@@ -203,6 +203,30 @@ def parse_linkedin_date(date_text: str) -> tuple:
     
     return (True, 0, date_text)
 
+def is_job_closed(text: str) -> bool:
+    """
+    Check if a LinkedIn job is no longer accepting applications
+    """
+    closed_indicators = [
+        "no longer accepting applications",
+        "no longer accepting",
+        "application closed",
+        "position filled",
+        "no longer available",
+        "job closed",
+        "not accepting applications",
+        "applications closed",
+        "this job is no longer accepting applications",
+        "job is no longer active",
+        "expired"
+    ]
+    
+    text_lower = text.lower()
+    for indicator in closed_indicators:
+        if indicator in text_lower:
+            return True
+    return False
+
 @tool
 def search_linkedin_jobs(role: str) -> List[Dict]:
     client = TavilyClient(api_key=TAVILY_API_KEY)
@@ -219,6 +243,10 @@ def search_linkedin_jobs(role: str) -> List[Dict]:
             
             # Extract the actual posted date from LinkedIn
             full_text = f"{title} {content}"
+            if is_job_closed(full_text):
+                print(f"⏭️ Skipping closed LinkedIn job: {title} - No longer accepting applications")
+                continue
+
             posted_date_raw = extract_linkedin_posted_date(full_text)
             
             # Parse the date and check if recent
