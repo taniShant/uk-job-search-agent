@@ -7,7 +7,7 @@ Daily automated job search for UK tech roles paying £120k-150k.
 1. Get Tavily API key from https://tavily.com
 2. Add secrets in GitHub: Settings → Secrets and variables → Actions
    - `TAVILY_API_KEY`  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"
-   - `EMAIL_PASSWORD`
+   - `EMAIL_PASSWORD` Get it from google , its not the google email pass but the app password. Note google needs 2FA to generate this pass
    - Aws secret keys 
 3. Push to main branch 
 
@@ -24,6 +24,20 @@ Key : Authorization  Value: Bearer <gitlab pat>
 Key : Content-Type   Value: application/json
 
 Method: POST . Request body {"ref":"main"}
+
+------------------------
+Sync to local from s3 (MAc) .create a script sync_csv.sh .
+Make it executable : chmod +x /Users/shantanu/Downloads/CodeProjects/AGENTIC_AI_PROJECTS/uk-job-search-agent/sync_csv.sh
+
+use aws configure to use aws credentials so that interaction with S3 is ok 
+
+Then in mac zsh terminal , create a cron expression : 
+crontab -e
+Make the below entry  , then save vim . This creates a local cron job to run at 10:10 am deaily 
+
+(venv) (base) shantanuroy@Shantanus-MacBook-Pro uk-job-search-agent % crontab -l
+PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+10 10 * * * /Users/shantanu/Downloads/CodeProjects/AGENTIC_AI_PROJECTS/uk-job-search-agent/sync_csv.sh
 
 ## License
 

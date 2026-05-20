@@ -132,6 +132,7 @@ on:
   workflow_dispatch:
 
 jobs:
+  # JOB 1: job-search from previous run
   job-search:
     runs-on: ubuntu-latest
     steps:
@@ -177,3 +178,14 @@ jobs:
           path: jobs_history.csv
           retention-days: 30  # Keep history for 30 days
           overwrite: true  # Replace yesterday's artifact
+
+      # ✅ Upload to S3 for local sync
+      - name: Upload CSV to S3
+        run: |
+          aws s3 cp jobs_history.csv s3://svc-s3-dev-632943041262-modelartifact/uk-work-search-agent/data/latest_jobs_history.csv
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: eu-west-1
+        continue-on-error: true
+ 

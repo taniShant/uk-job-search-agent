@@ -4,7 +4,7 @@ UK Job Search Agent - Finds £120k-150k tech jobs in UK and emails daily digest
 Now with CSV-based persistence + deduplication
 """
 
-import os, sys
+import os, sys, re
 import json
 import time
 import smtplib
@@ -114,6 +114,58 @@ def append_jobs_to_csv(jobs: List[Dict]):
 # ============================================================
 # TOOL 1: LinkedIn Jobs
 # ============================================================
+def extract_linkedin_posted_date(text: str) -> str:
+    """Extract the date string from LinkedIn job posting"""
+    # Pattern: "X days/weeks/months ago" or "a week/month ago"
+    match = re.search(r'(\d+\s+(?:day|days|week|weeks|month|months)\s+ago)|(a\s+(?:week|month)\s+ago)', text.lower())
+    if match:
+        return match.group(0)
+    return "Date not specified"
+
+def parse_linkedin_date(date_text: str) -> tuple:
+    """
+    Parse LinkedIn date strings like:
+    - "2 weeks ago"
+    - "3 months ago"
+    - "a week ago"
+    
+    Returns (is_recent: bool, days_old: int)
+    """
+    if not date_text or date_text == "Date not specified":
+        return (True, 0)  # Assume recent if no date info
+    
+    # Match "X days/weeks/months ago"
+    match = re.search(r'(\d+)\s+(day|days|week|weeks|month|months)\s+ago', date_text.lower())
+    
+    if not match:
+        # Try "a week ago" or "a month ago"
+        match = re.search(r'a\s+(week|month)\s+ago', date_text.lower())
+        if match:
+            unit = match.group(1)
+            if unit == 'week':
+                return (True, 7)  # 1 week = 7 days (include)
+            else:  # month
+                return (False, 30)  # 1 month = too old
+    
+    if match:
+        number = int(match.group(1))
+        unit = match.group(2)
+        
+        # Convert to days
+        if 'day' in unit:
+            days_old = number
+        elif 'week' in unit:
+            days_old = number * 7
+        elif 'month' in unit:
+            days_old = number * 30
+        else:
+            days_old = 0
+        
+        # Check if within 7 days
+        is_recent = days_old <= 7
+        return (is_recent, days_old)
+    
+    return (True, 0)
 
 @tool
 def search_linkedin_jobs(role: str) -> List[Dict]:
@@ -125,14 +177,30 @@ def search_linkedin_jobs(role: str) -> List[Dict]:
 
         jobs = []
         for r in results.get("results", []):
+
+            title = r.get("title", role)
+            content = r.get("content", "")
+            url = r.get("url", "")
+            
+            # Extract the actual posted date from LinkedIn
+            full_text = f"{title} {content}"
+            posted_date_raw = extract_linkedin_posted_date(full_text)
+            
+            # Check if job is recent (within 7 days)
+            is_recent, days_old = parse_linkedin_date(posted_date_raw)
+
+            if not is_recent:
+                print(f"⏭️ Skipping old LinkedIn job: {title} - {posted_date_raw} ({days_old} days old)")
+                continue 
+
             jobs.append({
-                "title": r.get("title", role),
-                "company": extract_company_from_url(r.get("url", "")),
+                "title": title,
+                "company": extract_company_from_url(url),
                 "location": LOCATION,
                 "salary_range": f"£{SALARY_MIN:,} - £{SALARY_MAX:,}",
-                "apply_url": r.get("url", ""),
+                "apply_url": url,
                 "source": "LinkedIn",
-                "posted_date": datetime.now().strftime("%Y-%m-%d")
+                "posted_date": posted_date_raw  # Now stores actual date like "2 weeks ago"
             })
 
         time.sleep(1)
@@ -459,7 +527,7 @@ def filter_jobs_by_criteria(jobs: List[Dict]) -> List[Dict]:
         location = j.get("location", "").lower()
 
         role_match = any(r.lower() in title for r in TARGET_ROLES)
-        uk_match = any(x in location for x in ["uk", "london", "britain", "united kingdom"])
+        uk_match = any(x in location for x in ["uk", "london", "britain", "united kingdom", "manchester", "london" ])
 
         if role_match and uk_match:
             filtered.append(j)

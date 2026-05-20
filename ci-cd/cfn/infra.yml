@@ -46,7 +46,7 @@ Resources:
   JobSearchLambda:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: uk-itwork-search-agent
+      FunctionName: uk-work-search-agent
       Runtime: python3.12
       Handler: jobsearcher_uk.lambda_handler
       Role: !Ref LambdaRoleArn
