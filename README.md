@@ -20,10 +20,14 @@ URL points to github , action.yml : https://api.github.com/repos/taniShant/uk-jo
 Go to Advanced tab of cron and set values 
 
 Key : Accept         Value: application/vnd.github.v3+json
+
 Key : Authorization  Value: Bearer <gitlab pat>
+
 Key : Content-Type   Value: application/json
 
+
 Method: POST . Request body {"ref":"main"}
+
 
 ------------------------
 Sync to local from s3 (MAc) .create a script sync_csv.sh .
