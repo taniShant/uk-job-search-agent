@@ -331,6 +331,16 @@ def search_general_jobs(role: str) -> List[Dict]:
 
         jobs = []
         for r in results.get("results", []):
+            title = r.get("title", role)
+            content = r.get("content", "")
+            url = r.get("url", "")
+            full_text = f"{title} {content}".lower()
+            
+            # Check if job is closed
+            if is_job_closed(full_text):
+                print(f"⏭️ Skipping closed job: {title}")
+                continue
+            
             title = r.get("title", "").lower()
             if any(role.lower() in title for role in TARGET_ROLES):
                 jobs.append({
