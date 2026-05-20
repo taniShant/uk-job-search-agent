@@ -57,20 +57,38 @@ def load_existing_jobs() -> Dict[str, Dict]:
 
     with open(JOBS_FILE, mode="r", newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
+        # for row in reader:
+        #     existing[row["apply_url"]] = row
+
         for row in reader:
-            existing[row["apply_url"]] = row
+            # Create key from title and company
+            key = f"{row.get('title', '').lower()}|{row.get('company', '').lower()}"
+            existing[key] = row
 
     return existing
 
+def get_job_key(job: Dict) -> str:
+    """
+    Create a unique key for a job using title + company (more reliable than URL)
+    """
+    title = job.get("title", "").lower().strip()
+    company = job.get("company", "").lower().strip()
+    return f"{title}|{company}"
 
 def filter_new_jobs(jobs: List[Dict], existing: Dict[str, Dict]) -> List[Dict]:
     """Return only new jobs not already in CSV"""
     new_jobs = []
 
     for job in jobs:
-        url = job.get("apply_url")
-        if url and url not in existing:
+        key = get_job_key(job)
+        if key not in existing:
             new_jobs.append(job)
+        else:
+            print(f"⏭️ Duplicate found: {job.get('title')} at {job.get('company')}")
+
+        # url = job.get("apply_url")
+        # if url and url not in existing:
+        #     new_jobs.append(job)
 
     return new_jobs
 
@@ -91,7 +109,8 @@ def append_jobs_to_csv(jobs: List[Dict]):
             "apply_url",
             "source",
             "posted_date",
-            "first_seen_date"
+            "first_seen_date",
+            "job_key"
         ]
 
         writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -108,7 +127,8 @@ def append_jobs_to_csv(jobs: List[Dict]):
                 "apply_url": job.get("apply_url", ""),
                 "source": job.get("source", ""),
                 "posted_date": job.get("posted_date", ""),
-                "first_seen_date": datetime.now().isoformat()
+                "first_seen_date": datetime.now().isoformat(),
+                "job_key": get_job_key(job)
             })
 
 # ============================================================
@@ -116,36 +136,42 @@ def append_jobs_to_csv(jobs: List[Dict]):
 # ============================================================
 def extract_linkedin_posted_date(text: str) -> str:
     """Extract the date string from LinkedIn job posting"""
-    # Pattern: "X days/weeks/months ago" or "a week/month ago"
-    match = re.search(r'(\d+\s+(?:day|days|week|weeks|month|months)\s+ago)|(a\s+(?:week|month)\s+ago)', text.lower())
-    if match:
-        return match.group(0)
-    return "Date not specified"
+    # Pattern matches: "4 days ago", "2 weeks ago", "1 month ago", "a week ago"
+    patterns = [
+        r'(\d+)\s+(day|days|week|weeks|month|months)\s+ago',
+        r'a\s+(week|month)\s+ago'
+    ]
+    
+    for pattern in patterns:
+        match = re.search(pattern, text.lower())
+        if match:
+            return match.group(0)
+    return ""
 
 def parse_linkedin_date(date_text: str) -> tuple:
     """
     Parse LinkedIn date strings like:
-    - "2 weeks ago"
-    - "3 months ago"
-    - "a week ago"
+    - "4 days ago" -> (True, 4, "4 days ago")
+    - "2 weeks ago" -> (False, 14, "2 weeks ago")
+    - "1 month ago" -> (False, 30, "1 month ago")
+    - "a week ago" -> (True, 7, "1 week ago")
+    - "" -> (True, 0, "Date not specified")
     
-    Returns (is_recent: bool, days_old: int)
+    Returns (is_recent: bool, days_old: int, cleaned_date: str)
     """
-    if not date_text or date_text == "Date not specified":
-        return (True, 0)  # Assume recent if no date info
+    if not date_text:
+        return (True, 0, "Date not specified")
     
-    # Match "X days/weeks/months ago"
-    match = re.search(r'(\d+)\s+(day|days|week|weeks|month|months)\s+ago', date_text.lower())
+    date_text_lower = date_text.lower()
     
-    if not match:
-        # Try "a week ago" or "a month ago"
-        match = re.search(r'a\s+(week|month)\s+ago', date_text.lower())
-        if match:
-            unit = match.group(1)
-            if unit == 'week':
-                return (True, 7)  # 1 week = 7 days (include)
-            else:  # month
-                return (False, 30)  # 1 month = too old
+    # Handle "a week ago" or "a month ago"
+    if date_text_lower == "a week ago":
+        return (True, 7, "1 week ago")
+    if date_text_lower == "a month ago":
+        return (False, 30, "1 month ago")
+    
+    # Handle "X days/weeks/months ago"
+    match = re.search(r'(\d+)\s+(day|days|week|weeks|month|months)\s+ago', date_text_lower)
     
     if match:
         number = int(match.group(1))
@@ -163,9 +189,19 @@ def parse_linkedin_date(date_text: str) -> tuple:
         
         # Check if within 7 days
         is_recent = days_old <= 7
-        return (is_recent, days_old)
+        
+        # Clean up the date text (e.g., "days" -> "day" for consistency)
+        if 'days' in unit and number == 1:
+            unit = 'day'
+        elif 'weeks' in unit and number == 1:
+            unit = 'week'
+        elif 'months' in unit and number == 1:
+            unit = 'month'
+        
+        cleaned_date = f"{number} {unit} ago"
+        return (is_recent, days_old, cleaned_date)
     
-    return (True, 0)
+    return (True, 0, date_text)
 
 @tool
 def search_linkedin_jobs(role: str) -> List[Dict]:
@@ -177,7 +213,6 @@ def search_linkedin_jobs(role: str) -> List[Dict]:
 
         jobs = []
         for r in results.get("results", []):
-
             title = r.get("title", role)
             content = r.get("content", "")
             url = r.get("url", "")
@@ -186,13 +221,13 @@ def search_linkedin_jobs(role: str) -> List[Dict]:
             full_text = f"{title} {content}"
             posted_date_raw = extract_linkedin_posted_date(full_text)
             
-            # Check if job is recent (within 7 days)
-            is_recent, days_old = parse_linkedin_date(posted_date_raw)
-
+            # Parse the date and check if recent
+            is_recent, days_old, cleaned_date = parse_linkedin_date(posted_date_raw)
+            
             if not is_recent:
-                print(f"⏭️ Skipping old LinkedIn job: {title} - {posted_date_raw} ({days_old} days old)")
-                continue 
-
+                print(f"⏭️ Skipping old LinkedIn job: {title} - {cleaned_date} ({days_old} days old)")
+                continue  # Skip this job entirely
+            
             jobs.append({
                 "title": title,
                 "company": extract_company_from_url(url),
@@ -200,7 +235,7 @@ def search_linkedin_jobs(role: str) -> List[Dict]:
                 "salary_range": f"£{SALARY_MIN:,} - £{SALARY_MAX:,}",
                 "apply_url": url,
                 "source": "LinkedIn",
-                "posted_date": posted_date_raw  # Now stores actual date like "2 weeks ago"
+                "posted_date": cleaned_date  # Store like "4 days ago" or "1 month ago"
             })
 
         time.sleep(1)
@@ -209,8 +244,7 @@ def search_linkedin_jobs(role: str) -> List[Dict]:
     except Exception as e:
         print("LinkedIn error:", e)
         return []
-
-
+    
 def extract_company_from_url(url: str) -> str:
     parts = url.split("/")
     if "company" in parts:
@@ -529,8 +563,16 @@ def filter_jobs_by_criteria(jobs: List[Dict]) -> List[Dict]:
         role_match = any(r.lower() in title for r in TARGET_ROLES)
         uk_match = any(x in location for x in ["uk", "london", "britain", "united kingdom", "manchester", "london" ])
 
-        if role_match and uk_match:
+        posted_date = j.get("posted_date", "")
+        is_recent, days_old, _ = parse_linkedin_date(posted_date)
+
+        if role_match and uk_match and is_recent:
             filtered.append(j)
+        elif not is_recent and posted_date:
+            print(f"⏭️ Filtered out (too old): {j.get('title')} - {posted_date} ({days_old} days)")
+
+        # if role_match and uk_match:
+        #     filtered.append(j)
 
     return filtered
 
