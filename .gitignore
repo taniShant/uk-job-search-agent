@@ -4,4 +4,4 @@ __pycache__/
 *.pyc
 .vscode/
 .idea/
-/src/*.csv
+data/*.csv
